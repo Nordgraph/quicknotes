@@ -243,19 +243,32 @@ function addNote(title, day) {
   return n;
 }
 const upd = (n, patch) => { const r = { ...D.notes.get(n.id) || n, ...patch }; put('notes', r); return r; };
-function toggleDone(n) {
+// подпункты дела (только того же дня — так их и видно в списке)
+const kidsOf = n => allNotes().filter(k => k.parent === n.id && k.id !== n.id && k.day === n.day);
+function markDone(n, on) {
   n = D.notes.get(n.id) || n;
-  if (n.done) {
-    upd(n, { done: false, done_on: null });
-    const last = [...D.history.values()].filter(x => x.note === n.id).sort((a, b) => a.time < b.time ? -1 : 1).pop();
-    if (last) put('history', { ...last, deleted: true });
-    buzz(8);
-  } else {
+  if (!!n.done === on) return;
+  if (on) {
     upd(n, { done: true, done_on: today() });
     const now = new Date();
     put('history', { id: `${localNaive(now)}|${n.id}`, time: now.toISOString(), title: noteTitle(n), note: n.id, deleted: false });
-    buzz(undoneOn(n.day).length ? 12 : [20, 60, 30]);
+  } else {
+    upd(n, { done: false, done_on: null });
+    const last = [...D.history.values()].filter(x => x.note === n.id).sort((a, b) => a.time < b.time ? -1 : 1).pop();
+    if (last) put('history', { ...last, deleted: true });
   }
+}
+function syncParent(id) {  // родитель отмечен, когда отмечены все подпункты (и наоборот)
+  const p = id && D.notes.get(id), kids = p ? kidsOf(p) : [];
+  if (kids.length) markDone(p, kids.every(k => k.done));
+}
+function toggleDone(n) {
+  n = D.notes.get(n.id) || n;
+  const on = !n.done;
+  markDone(n, on);
+  for (const k of kidsOf(n)) markDone(k, on);  // галочка родителя — всем подпунктам
+  syncParent(n.parent);
+  buzz(!on ? 8 : undoneOn(n.day).length ? 12 : [20, 60, 30]);
   const t = getTimer();
   if (t && t.tasks && !t.done) {  // таймер с делами: всё отмечено — часы превращаются в галочку
     const all = !undoneOn(today()).length && dayNotes(today()).length > 0;
@@ -464,8 +477,8 @@ function noteMenu(n) {
   const hasKids = allNotes().some(k => k.parent === n.id);
   const items = [
     [n.important ? 'Не важное' : 'Важное', 'bang', () => upd(n, { important: !n.important })],
-    n.parent ? ['Сделать обычным', 'unnest', () => upd(n, { parent: null })]
-      : above && !hasKids ? [`Вложить в «${noteTitle(above.n)}»`, 'nest', () => upd(n, { parent: above.n.id })] : null,
+    n.parent ? ['Сделать обычным', 'unnest', () => { const p = n.parent; upd(n, { parent: null }); syncParent(p); }]
+      : above && !hasKids ? [`Вложить в «${noteTitle(above.n)}»`, 'nest', () => { upd(n, { parent: above.n.id }); syncParent(above.n.id); }] : null,
     ['Перенести…', 'move', () => pickDay(d => moveNotes(moveGroup(n), d))],
     ['Удалить', 'trash', () => deleteNote(n), 'red'],
   ];

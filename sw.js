@@ -1,6 +1,6 @@
 // Кэш оболочки приложения: открывается и без сети. Данные идут мимо кэша.
-const VER = 'qn-1';
-const SHELL = ['./', 'index.html', 'style.css?v=1', 'app.js?v=1', 'manifest.webmanifest', 'icon-192.png', 'favicon.png',
+const VER = 'qn-2';
+const SHELL = ['./', 'index.html', 'style.css?v=2', 'app.js?v=2', 'manifest.webmanifest', 'icon-192.png', 'favicon.png',
   'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js',
   'https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js'];
 
