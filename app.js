@@ -833,7 +833,7 @@ function pickDay(fn) {
       date, h('div', { style: 'padding:6px 20px 4px;text-align:right' }, h('button', { class: 'btn accent small', onclick: () => date.value && done(date.value) }, 'На эту дату'))));
 }
 function openMenu() {
-  sheet(user.email + ' · версия 5', [
+  sheet(user.email + ` · версия 6 · ${innerHeight}/${screen.height}`, [
     ['Обновить', 'move', async () => {  // свежая версия приложения + данные
       try { const r = await navigator.serviceWorker?.getRegistration(); await r?.update(); } catch (e) {}
       location.reload();
@@ -884,5 +884,15 @@ addEventListener('popstate', () => { const p = $('#notepage'); if (p) { flushNot
 addEventListener('pagehide', flushNote);
 let lastDay = today();
 setInterval(() => { if (uid && today() !== lastDay) { lastDay = today(); finalizeDays(); render(); } }, 60000);
+// iPhone, приложение с экрана «Домой»: страница бывает ниже экрана на высоту полоски статуса,
+// и снизу остаётся пустая полоса. Тянем приложение до самого низа экрана.
+function fitScreen() {
+  if (!navigator.standalone) return;
+  const portrait = innerHeight > innerWidth;
+  const full = portrait ? Math.max(screen.width, screen.height) : Math.min(screen.width, screen.height);
+  document.documentElement.style.setProperty('--app-h', (innerHeight < full ? full : innerHeight) + 'px');
+}
+fitScreen();
+addEventListener('resize', fitScreen);
 if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js');
 render();
