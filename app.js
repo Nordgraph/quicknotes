@@ -834,7 +834,10 @@ function pickDay(fn) {
 }
 function openMenu() {
   sheet(user.email, [
-    ['Обновить', 'move', () => loadAll()],
+    ['Обновить', 'move', async () => {  // свежая версия приложения + данные
+      try { const r = await navigator.serviceWorker?.getRegistration(); await r?.update(); } catch (e) {}
+      location.reload();
+    }],
     ['Выйти', 'door', () => confirmBox('Выйти из аккаунта на этом телефоне?', 'Выйти', async () => { await sb.auth.signOut(); })],
   ]);
 }

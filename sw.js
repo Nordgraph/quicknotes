@@ -1,6 +1,6 @@
 // Кэш оболочки приложения: открывается и без сети. Данные идут мимо кэша.
-const VER = 'qn-3';
-const SHELL = ['./', 'index.html', 'style.css?v=3', 'app.js?v=3', 'manifest.webmanifest', 'icon-192.png', 'favicon.png',
+const VER = 'qn-4';
+const SHELL = ['./', 'index.html', 'style.css?v=4', 'app.js?v=4', 'manifest.webmanifest', 'icon-192.png', 'favicon.png',
   'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js',
   'https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js'];
 
@@ -23,7 +23,8 @@ self.addEventListener('fetch', e => {
       return res;
     })));
   } else {
-    e.respondWith(fetch(e.request).then(res => {
+    // no-cache: браузер каждый раз сверяется с сайтом, обновления видны сразу
+    e.respondWith(fetch(url.href, { cache: 'no-cache' }).then(res => {
       const copy = res.clone();
       caches.open(VER).then(c => c.put(e.request, copy));
       return res;
