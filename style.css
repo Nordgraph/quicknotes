@@ -39,10 +39,10 @@ main { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; position: r
 
 /* нижние вкладки */
 .tabs { display: flex; background: var(--bg); border-top: 1px solid var(--border);
-  padding-bottom: max(4px, calc(var(--bot) - 20px)); }
-.tabs button { flex: 1; padding: 7px 0 4px; color: var(--dim); font-size: 11px; display: flex;
-  flex-direction: column; align-items: center; gap: 3px; position: relative; }
-.tabs button svg { width: 23px; height: 23px; }
+  padding-bottom: max(4px, calc(var(--bot) - 26px)); }
+.tabs button { flex: 1; padding: 5px 0 2px; color: var(--dim); font-size: 10px; line-height: 12px; display: flex;
+  flex-direction: column; align-items: center; gap: 2px; position: relative; }
+.tabs button svg { width: 21px; height: 21px; }
 .tabs button.on { color: var(--accent); }
 .tabs .badge { position: absolute; top: 4px; left: calc(50% + 8px); background: var(--accent);
   color: var(--on-accent); font-size: 10px; font-weight: 700; border-radius: 9px; padding: 0 5px;
