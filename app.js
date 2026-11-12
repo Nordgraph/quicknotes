@@ -833,7 +833,7 @@ function pickDay(fn) {
       date, h('div', { style: 'padding:6px 20px 4px;text-align:right' }, h('button', { class: 'btn accent small', onclick: () => date.value && done(date.value) }, 'На эту дату'))));
 }
 function openMenu() {
-  sheet(user.email + ` · версия 7 · ${innerHeight}/${screen.height}`, [
+  sheet(user.email + ` · версия 8 · ${innerHeight}/${screen.height}`, [
     ['Обновить', 'move', async () => {  // свежая версия приложения + данные
       try { const r = await navigator.serviceWorker?.getRegistration(); await r?.update(); } catch (e) {}
       location.reload();

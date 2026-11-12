@@ -39,8 +39,8 @@ main { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; position: r
 
 /* нижние вкладки */
 .tabs { display: flex; background: var(--bg); border-top: 1px solid var(--border);
-  padding-bottom: max(4px, calc(var(--bot) - 26px)); }
-.tabs button { flex: 1; padding: 5px 0 2px; color: var(--dim); font-size: 10px; line-height: 12px; display: flex;
+  padding-bottom: max(6px, calc(var(--bot) - 14px)); }
+.tabs button { flex: 1; padding: 9px 0 4px; color: var(--dim); font-size: 10px; line-height: 12px; display: flex;
   flex-direction: column; align-items: center; gap: 2px; position: relative; }
 .tabs button svg { width: 21px; height: 21px; }
 .tabs button.on { color: var(--accent); }
