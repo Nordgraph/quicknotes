@@ -68,6 +68,8 @@ main { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; position: r
 .row.imp .t { color: var(--imp-fg); font-weight: 600; }
 .row.done .t { color: var(--done); text-decoration: line-through; font-weight: 400; }
 .row .bang { color: var(--accent); font-weight: 700; margin-left: -6px; }
+.row .inf-ic { height: 10px; flex: none; margin-left: -4px; opacity: .9; }
+.row.kid .inf-ic { height: 8px; }
 .row .more { width: 42px; height: 42px; display: grid; place-items: center; color: var(--dim); flex: none; }
 .row.sortable-chosen { background: var(--select); }
 .row.sortable-ghost { opacity: .35; }
@@ -116,6 +118,11 @@ main { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; position: r
 .note-title.done { color: var(--done); text-decoration: line-through; }
 .note-meta { color: var(--soft); font-size: 13px; margin: 8px 0 14px 36px; display: flex; flex-wrap: wrap; gap: 6px 14px; }
 .note-meta .imp-on { color: var(--accent); }
+.note-meta .daily-on { display: inline-flex; align-items: center; gap: 6px; }
+.note-meta .inf-ic { height: 8px; }
+.inf-tog { flex: none; display: grid; place-items: center; min-width: 40px; min-height: 40px; }
+.inf-tog .inf-ic { height: 11px; opacity: .25; transition: opacity .15s; }
+.inf-tog.on .inf-ic { opacity: .95; }
 .note-body { width: 100%; min-height: 40vh; resize: none; color: #d0d0d0; font-size: 16px; line-height: 1.5; }
 .note-body::placeholder, .note-title::placeholder { color: var(--dim); }
 .note-body:disabled { color: var(--done); }
@@ -139,6 +146,7 @@ main { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; position: r
 .sheet .item:active { background: var(--select); }
 .sheet .item.red { color: var(--red); }
 .sheet .item svg { width: 20px; height: 20px; color: var(--soft); }
+.sheet .item .inf-ic { width: 20px; height: 10px; object-fit: contain; opacity: .75; }
 .sheet .item.red svg { color: var(--red); }
 .dialog { position: fixed; left: 50%; top: 42%; transform: translate(-50%, -50%); z-index: 41; width: min(86vw, 340px);
   background: var(--panel); border: 1px solid var(--border); border-radius: 16px; padding: 20px; animation: fade .15s; }

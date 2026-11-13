@@ -53,7 +53,9 @@ function h(tag, attrs, ...kids) {
   for (const c of kids.flat()) if (c != null && c !== false) e.append(c.nodeType ? c : document.createTextNode(c));
   return e;
 }
-const icon = (name, cls) => h('span', { class: cls, html: ICON[name], style: 'display:contents' });
+const icon = (name, cls) => name === 'inf' ? h('img', { class: 'inf-ic', src: 'art/daily.png', alt: '' })
+  : h('span', { class: cls, html: ICON[name], style: 'display:contents' });
+const DAILY_MARK = '∞';  // с него начинаешь название — дело каждый день
 const pad = n => String(n).padStart(2, '0');
 const ymd = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const parseDay = s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
@@ -133,6 +135,7 @@ async function loadAll() {
     loaded = true;
     persist();
     finalizeDays();
+    rollDaily();
     setSync(pending.size ? 'wait' : 'ok');
   } catch (e) {
     console.warn(e);
@@ -202,6 +205,7 @@ function onRemote(table, row) {
     if (pending.has(`${table}:${row.id}`)) return;  // своя правка ещё в пути — она главнее
     const m = table === 'notes' ? D.notes : D.history;
     if (row.deleted) m.delete(row.id); else m.set(row.id, row);
+    if (table === 'notes' && row.daily && row.day < today()) rollDaily();  // пришло со вчерашним днём
   }
   persist();
   renderSoon();
@@ -236,10 +240,14 @@ function newId() {
   return `${ymd(d).replace(/-/g, '')}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}-m${Math.random().toString(36).slice(2, 6)}.txt`;
 }
 const maxSort = () => allNotes().reduce((m, n) => Math.max(m, n.sort || 0), 0) + 1;
-function addNote(title, day) {
-  const n = { id: newId(), title: title.trim(), body: '', day, done: false, done_on: null, sort: maxSort(),
-    parent: null, important: false, deleted: false, images: [] };
+function addNote(title, day, force) {
+  title = title.trim();
+  const daily = !!force || title.startsWith(DAILY_MARK);
+  if (daily) title = title.slice(DAILY_MARK.length).trim();
+  const n = { id: newId(), title, body: '', day, done: false, done_on: null, sort: maxSort(),
+    parent: null, important: false, daily, deleted: false, images: [] };
   put('notes', n);
+  if (daily) rollDaily();
   return n;
 }
 const upd = (n, patch) => { const r = { ...D.notes.get(n.id) || n, ...patch }; put('notes', r); return r; };
@@ -310,6 +318,39 @@ function finalizeDays() {
   }
   if (changed) putState({ day_marks: marks });
 }
+// ежедневное дело одно и стоит на сегодня, но видно и на других днях:
+// в прошлых (с дня, когда его завели — дата в начале id) и на завтра
+const idDay = id => { const m = /^(\d{4})(\d{2})(\d{2})/.exec(id); return m ? `${m[1]}-${m[2]}-${m[3]}` : today(); };
+function dailyRoot(n) {
+  if (n.daily) return n;
+  const p = n.parent && D.notes.get(n.parent);
+  return p && p.daily && p.day === n.day ? p : null;
+}
+function dailyGhosts(view) {
+  const t = today();
+  if (view === t || view > addDays(t, 1)) return [];
+  return allNotes().filter(n => n.day === t && dailyRoot(n) && idDay(n.id) <= view).map(n => ({ ...n, ghost: true,
+    done: view < t && [...D.history.values()].some(x => x.note === n.id && ymd(new Date(x.time)) === view) }));
+}
+// ∞ как галочка: у родителя — сразу всем подпунктам; у подпункта — родитель с ∞,
+// когда ∞ у всех его подпунктов
+function setDaily(n, on) {
+  n = D.notes.get(n.id) || n;
+  for (const k of [n, ...kidsOf(n)]) if (!!k.daily !== on) upd(k, { daily: on });
+  const p = n.parent && D.notes.get(n.parent), kids = p ? kidsOf(p) : [];
+  if (kids.length) { const all = kids.every(k => D.notes.get(k.id).daily); if (!!p.daily !== all) upd(p, { daily: all }); }
+  rollDaily();
+}
+function rollDaily() {
+  // ежедневные дела (и их подпункты) переезжают на сегодня с пустой галочкой;
+  // вчерашняя отметка остаётся в истории и в ✓/✕ дня
+  const t = today();
+  const roll = allNotes().filter(n => n.daily && n.day < t);
+  const ids = new Set(roll.map(n => n.id));
+  for (const k of allNotes()) if (!ids.has(k.id) && k.parent && ids.has(k.parent) && k.day === D.notes.get(k.parent).day) roll.push(k);
+  for (const n of roll) upd(n, { day: t, done: false, done_on: null });
+  return roll.length > 0;
+}
 
 // ---------- таймер ----------
 const timerShared = () => ls.get('qn:timerShared', true);
@@ -350,7 +391,7 @@ setInterval(() => {
 }, 250);
 
 // ---------- экран ----------
-let tab = 'list', shift = 0, revealDay = null, openId = null;
+let tab = 'list', shift = 0, revealDay = null, openId = null, addDaily = false;
 let calMonth = null, calDay = null, query = '', searchOpen = false, skipped = false;
 document.addEventListener('focusout', () => setTimeout(() => { if (skipped) render(); }, 50));
 
@@ -409,7 +450,7 @@ function renderMain() {
 // --- список дня ---
 function renderList(main) {
   const view = addDays(today(), shift);
-  const notes = dayNotes(view);
+  const notes = [...dayNotes(view), ...dailyGhosts(view)].sort((a, b) => a.sort - b.sort || (a.id < b.id ? -1 : 1));
   const rows = grouped(notes);
   // новый день: остались дела с прошлых дней — предложить перенести
   if (!shift && ls.get('qn:carryDay', '') !== today()) {
@@ -427,12 +468,12 @@ function renderList(main) {
       break;
     }
   }
-  const left = notes.filter(n => !n.done);
+  const left = notes.filter(n => !n.done && !n.ghost);
   if (shift && left.length) {
     main.append(h('button', { class: 'link', onclick: () => { moveNotes(left.map(n => n.id), today()); shift = 0; render(); } },
       `→ перенести ${left.length} на сегодня`));
   }
-  const allDone = notes.length > 0 && !left.length;
+  const allDone = notes.length > 0 && notes.every(n => n.done);
   if (allDone && revealDay !== view) {
     main.append(h('div', { class: 'mascot' }, h('img', { src: art('day_done'), alt: '' })),
       h('div', { class: 'done-card' }, h('div', { class: 'ok' }, '✓'), h('h3', null, 'День выполнен'),
@@ -444,8 +485,9 @@ function renderList(main) {
   for (const { n, kid, last } of rows) {
     const cls = ['row', kid && 'kid', last && 'last', n.done && 'done', n.important && !n.done && 'imp'].filter(Boolean).join(' ');
     ul.append(h('li', { class: cls, 'data-id': n.id },
-      h('button', { class: 'chk' + (n.done ? ' on' : ''), 'aria-label': 'Готово', onclick: e => { e.stopPropagation(); toggleDone(n); } }, n.done ? icon('check') : null),
+      h('button', { class: 'chk' + (n.done ? ' on' : ''), 'aria-label': 'Готово', onclick: e => { e.stopPropagation(); if (n.ghost) buzz(8); else toggleDone(n); } }, n.done ? icon('check') : null),
       h('span', { class: 't', onclick: () => openNote(n.id) }, noteTitle(n)),
+      n.daily ? icon('inf') : null,
       n.important && !n.done ? h('span', { class: 'bang' }, '!') : null,
       h('button', { class: 'more', 'aria-label': 'Действия', onclick: () => noteMenu(n) }, icon('more'))));
   }
@@ -458,10 +500,15 @@ function renderList(main) {
       render();
     } });
   }
+  const add = () => { addNote(inp.value, view, addDaily); addDaily = false; };
   const inp = h('input', { placeholder: 'Новая заметка', enterkeyhint: 'done', onkeydown: e => {
-    if (e.key === 'Enter' && inp.value.trim()) { addNote(inp.value, view); inp.value = ''; buzz(8); inp.blur(); render(); setTimeout(() => $('.add input')?.focus(), 30); }
-  }, onblur: () => { if (inp.value.trim()) { addNote(inp.value, view); render(); } } });
-  main.append(h('div', { class: 'add' }, h('span', { class: 'plus' }, icon('plus')), inp));
+    if (e.key === 'Enter' && inp.value.trim()) { add(); inp.value = ''; buzz(8); inp.blur(); render(); setTimeout(() => $('.add input')?.focus(), 30); }
+  }, onblur: () => { if (inp.value.trim()) { add(); render(); } } });
+  // ∞ справа: нажал — новое дело будет каждый день (ярко), ещё раз — обычное (бледно)
+  const inf = h('button', { class: 'inf-tog' + (addDaily ? ' on' : ''), 'aria-label': 'Каждый день',
+    onpointerdown: e => e.preventDefault(),  // поле ввода не теряет фокус
+    onclick: () => { addDaily = !addDaily; inf.classList.toggle('on', addDaily); buzz(8); } }, icon('inf'));
+  main.append(h('div', { class: 'add' }, h('span', { class: 'plus' }, icon('plus')), inp, inf));
   if (!notes.length || allDone) {
     const caps = allDone ? CAPTIONS_ALL_DONE : CAPTIONS_EMPTY;
     main.append(h('div', { class: 'mascot' }, h('img', { src: art(pick(ANGELS, ordinal(view))), alt: '' }),
@@ -473,12 +520,13 @@ function noteMenu(n) {
   const view = addDays(today(), shift);
   const vis = grouped(dayNotes(view));
   const i = vis.findIndex(r => r.n.id === n.id);
-  const above = vis.slice(0, i).reverse().find(r => !r.kid);
+  const above = i > 0 ? vis.slice(0, i).reverse().find(r => !r.kid) : null;
   const hasKids = allNotes().some(k => k.parent === n.id);
   const items = [
     [n.important ? 'Не важное' : 'Важное', 'bang', () => upd(n, { important: !n.important })],
+    [n.daily ? 'Не каждый день' : 'Каждый день', 'inf', () => setDaily(n, !n.daily)],
     n.parent ? ['Сделать обычным', 'unnest', () => { const p = n.parent; upd(n, { parent: null }); syncParent(p); }]
-      : above && !hasKids ? [`Вложить в «${noteTitle(above.n)}»`, 'nest', () => { upd(n, { parent: above.n.id }); syncParent(above.n.id); }] : null,
+      : above && !hasKids ? [`Вложить в «${noteTitle(above.n)}»`, 'nest', () => { upd(n, { parent: above.n.id, ...(above.n.daily ? { daily: true } : {}) }); syncParent(above.n.id); }] : null,
     ['Перенести…', 'move', () => pickDay(d => moveNotes(moveGroup(n), d))],
     ['Удалить', 'trash', () => deleteNote(n), 'red'],
   ];
@@ -501,14 +549,16 @@ function openNote(id) {
   title.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); body.focus(); } });
   body.addEventListener('input', queueNote);
   const chk = h('button', { class: 'chk', onclick: () => { flushNote(); toggleDone(D.notes.get(id)); } });
+  const inf = h('button', { class: 'icon-btn inf-tog', 'aria-label': 'Каждый день', onclick: () => {
+    flushNote(); const m = D.notes.get(id); setDaily(m, !m.daily); buzz(8); render(); } }, icon('inf'));
   const meta = h('div', { class: 'note-meta' });
   const gallery = h('div', { class: 'gallery' });
   page.append(
     h('div', { class: 'bar' }, h('button', { class: 'icon-btn', onclick: back, 'aria-label': 'Назад' }, icon('left')),
-      h('div', { class: 'grow' }),
+      h('div', { class: 'grow' }), inf,
       h('button', { class: 'icon-btn', 'aria-label': 'Действия', onclick: () => { flushNote(); noteMenu(D.notes.get(id)); } }, icon('more'))),
     h('div', { class: 'body' }, h('div', { class: 'note-head' }, chk, title), meta, gallery, body));
-  page.parts = { title, body, chk, meta, gallery };
+  page.parts = { title, body, chk, meta, gallery, inf };
   document.body.append(page);
   history.pushState({ note: id }, '');
   refreshNotePage(true);
@@ -525,7 +575,14 @@ function flushNote() {
   const n = openId && D.notes.get(openId);
   if (!page || !n) return;
   const { title, body } = page.parts;
-  const t = title.value.replace(/\s*\n\s*/g, ' ').trim();
+  let t = title.value.replace(/\s*\n\s*/g, ' ').trim();
+  if (t.startsWith(DAILY_MARK)) {  // ∞ в начале названия — дело каждый день
+    t = t.slice(DAILY_MARK.length).trim();
+    title.value = t;
+    upd(n, { title: t, body: body.value });
+    setDaily(n, true);
+    return;
+  }
   if (t !== n.title || body.value !== n.body) upd(n, { title: t, body: body.value });
 }
 function refreshNotePage(first) {
@@ -533,7 +590,8 @@ function refreshNotePage(first) {
   if (!page) return;
   const n = D.notes.get(openId);
   if (!n) { page.remove(); openId = null; return; }
-  const { title, body, chk, meta, gallery } = page.parts;
+  const { title, body, chk, meta, gallery, inf } = page.parts;
+  inf.classList.toggle('on', !!n.daily);
   if (!first && document.activeElement !== title && n.title !== title.value) title.value = n.title;
   if (!first && document.activeElement !== body && n.body !== body.value) body.value = n.body;
   chk.className = 'chk' + (n.done ? ' on' : '');
@@ -543,6 +601,7 @@ function refreshNotePage(first) {
   const [a, b] = dayLabel(n.day);
   meta.replaceChildren(...[h('span', null, `${a} · ${b}`),
     n.important ? h('span', { class: 'imp-on' }, '! важное') : null,
+    n.daily ? h('span', { class: 'daily-on' }, icon('inf'), 'каждый день') : null,
     n.parent && D.notes.get(n.parent) ? h('span', null, `в «${noteTitle(D.notes.get(n.parent))}»`) : null].filter(Boolean));
   renderGallery(gallery, n);
 }
@@ -833,7 +892,7 @@ function pickDay(fn) {
       date, h('div', { style: 'padding:6px 20px 4px;text-align:right' }, h('button', { class: 'btn accent small', onclick: () => date.value && done(date.value) }, 'На эту дату'))));
 }
 function openMenu() {
-  sheet(user.email + ` · версия 9 · ${innerHeight}/${screen.height}`, [
+  sheet(user.email + ` · версия 11 · ${innerHeight}/${screen.height}`, [
     ['Обновить', 'move', async () => {  // свежая версия приложения + данные
       try { const r = await navigator.serviceWorker?.getRegistration(); await r?.update(); } catch (e) {}
       location.reload();
@@ -883,6 +942,6 @@ addEventListener('online', () => { flush(); if (uid) loadAll(); });
 addEventListener('popstate', () => { const p = $('#notepage'); if (p) { flushNote(); openId = null; p.remove(); render(); } });
 addEventListener('pagehide', flushNote);
 let lastDay = today();
-setInterval(() => { if (uid && today() !== lastDay) { lastDay = today(); finalizeDays(); render(); } }, 60000);
+setInterval(() => { if (uid && today() !== lastDay) { lastDay = today(); finalizeDays(); rollDaily(); render(); } }, 60000);
 if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js');
 render();
