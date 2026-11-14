@@ -38,6 +38,8 @@ const ICON = {
   search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>',
   close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
   image: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><circle cx="9" cy="10" r="1.8"/><path d="M20 16l-5-5-8 8.5"/></svg>',
+  fold: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4l5 5 5-5M7 20l5-5 5 5"/></svg>',
+  unfold: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 9l5-5 5 5M7 15l5 5 5-5"/></svg>',
   door: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h4.5v16H14M10 8l-4 4 4 4M6 12h10"/></svg>',
 };
 const $ = (s, r = document) => r.querySelector(s);
@@ -226,14 +228,18 @@ function grouped(list) {
   for (const id in par) if (par[id] && par[par[id]]) par[id] = null;
   const kids = {};
   for (const n of list) if (par[n.id]) (kids[par[n.id]] ||= []).push(n);
-  const out = [];
+  const blocks = [];
   for (const n of list) {
     if (par[n.id]) continue;
-    out.push({ n, kid: false });
     const ks = kids[n.id] || [];
-    ks.forEach((k, i) => out.push({ n: k, kid: true, last: i === ks.length - 1 }));
+    if (ks.length && n.collapsed) { blocks.push([{ n, kid: false, folded: ks.length }]); continue; }  // свёрнуто: «+N»
+    blocks.push([{ n, kid: false }, ...ks.map((k, i) => ({ n: k, kid: true, last: i === ks.length - 1 }))]);
   }
-  return out;
+  // ежедневные дела — первым блоком, на своей подложке (daily)
+  const isD = b => !!dailyRoot(b[0].n);
+  blocks.sort((a, b) => isD(b) - isD(a));
+  for (const b of blocks) if (isD(b)) for (const r of b) r.daily = true;
+  return blocks.flat();
 }
 function newId() {
   const d = new Date();
@@ -293,6 +299,7 @@ function moveGroup(n) {
   return [n.id, ...allNotes().filter(k => k.parent === n.id && !k.done && k.day === n.day).map(k => k.id)];
 }
 function moveNotes(ids, dst) {
+  ids = ids.filter(id => D.notes.has(id) && !dailyRoot(D.notes.get(id)));  // ежедневные всегда на сегодня
   if (!ids.length) return;
   const moved = new Set(ids);
   for (const id of ids) {
@@ -310,7 +317,7 @@ function finalizeDays() {
   const marks = { ...(D.state.day_marks || {}) }, t = today();
   const byDay = {};
   for (const n of allNotes()) {
-    if (n.day < t && diffDays(t, n.day) <= 60) (byDay[n.day] ||= []).push(n.done);
+    if (n.day < t && diffDays(t, n.day) <= 60 && !dailyRoot(n)) (byDay[n.day] ||= []).push(n.done);
   }
   let changed = false;
   for (const [d, states] of Object.entries(byDay)) {
@@ -318,9 +325,7 @@ function finalizeDays() {
   }
   if (changed) putState({ day_marks: marks });
 }
-// ежедневное дело одно и стоит на сегодня, но видно и на других днях:
-// в прошлых (с дня, когда его завели — дата в начале id) и на завтра
-const idDay = id => { const m = /^(\d{4})(\d{2})(\d{2})/.exec(id); return m ? `${m[1]}-${m[2]}-${m[3]}` : today(); };
+// ежедневное дело одно и стоит на сегодня, но видно и на завтра (в прошлом его нет)
 function dailyRoot(n) {
   if (n.daily) return n;
   const p = n.parent && D.notes.get(n.parent);
@@ -328,9 +333,8 @@ function dailyRoot(n) {
 }
 function dailyGhosts(view) {
   const t = today();
-  if (view === t || view > addDays(t, 1)) return [];
-  return allNotes().filter(n => n.day === t && dailyRoot(n) && idDay(n.id) <= view).map(n => ({ ...n, ghost: true,
-    done: view < t && [...D.history.values()].some(x => x.note === n.id && ymd(new Date(x.time)) === view) }));
+  if (view !== addDays(t, 1)) return [];
+  return allNotes().filter(n => n.day === t && dailyRoot(n)).map(n => ({ ...n, ghost: true, done: false }));
 }
 // ∞ как галочка: у родителя — сразу всем подпунктам; у подпункта — родитель с ∞,
 // когда ∞ у всех его подпунктов
@@ -482,19 +486,20 @@ function renderList(main) {
     return;
   }
   const ul = h('ul', { class: 'list' });
-  for (const { n, kid, last } of rows) {
-    const cls = ['row', kid && 'kid', last && 'last', n.done && 'done', n.important && !n.done && 'imp'].filter(Boolean).join(' ');
+  for (const { n, kid, last, daily, folded } of rows) {
+    const cls = ['row', kid && 'kid', last && 'last', daily && 'daily', n.done && 'done', n.important && !n.done && 'imp'].filter(Boolean).join(' ');
     ul.append(h('li', { class: cls, 'data-id': n.id },
       h('button', { class: 'chk' + (n.done ? ' on' : ''), 'aria-label': 'Готово', onclick: e => { e.stopPropagation(); if (n.ghost) buzz(8); else toggleDone(n); } }, n.done ? icon('check') : null),
       h('span', { class: 't', onclick: () => openNote(n.id) }, noteTitle(n)),
       n.daily ? icon('inf') : null,
+      folded ? h('button', { class: 'fold', 'aria-label': 'Развернуть', onclick: () => { upd(n, { collapsed: false }); buzz(8); render(); } }, `+${folded}`) : null,
       n.important && !n.done ? h('span', { class: 'bang' }, '!') : null,
       h('button', { class: 'more', 'aria-label': 'Действия', onclick: () => noteMenu(n) }, icon('more'))));
   }
   main.append(ul);
   if (window.Sortable && rows.length > 1) {
-    Sortable.create(ul, { delay: 220, delayOnTouchOnly: true, animation: 150, onEnd: () => {
-      const ids = [...ul.children].map(li => li.dataset.id);
+    Sortable.create(ul, { delay: 220, delayOnTouchOnly: true, animation: 150, draggable: '.row', onEnd: () => {
+      const ids = [...ul.children].filter(li => li.dataset.id).map(li => li.dataset.id);
       const sorts = ids.map(id => D.notes.get(id).sort).sort((a, b) => a - b);
       ids.forEach((id, i) => { const n = D.notes.get(id); if (n.sort !== sorts[i]) upd(n, { sort: sorts[i] }); });
       render();
@@ -525,9 +530,10 @@ function noteMenu(n) {
   const items = [
     [n.important ? 'Не важное' : 'Важное', 'bang', () => upd(n, { important: !n.important })],
     [n.daily ? 'Не каждый день' : 'Каждый день', 'inf', () => setDaily(n, !n.daily)],
+    !n.parent && kidsOf(n).length ? [n.collapsed ? 'Развернуть' : 'Свернуть', n.collapsed ? 'unfold' : 'fold', () => upd(n, { collapsed: !n.collapsed })] : null,
     n.parent ? ['Сделать обычным', 'unnest', () => { const p = n.parent; upd(n, { parent: null }); syncParent(p); }]
-      : above && !hasKids ? [`Вложить в «${noteTitle(above.n)}»`, 'nest', () => { upd(n, { parent: above.n.id, ...(above.n.daily ? { daily: true } : {}) }); syncParent(above.n.id); }] : null,
-    ['Перенести…', 'move', () => pickDay(d => moveNotes(moveGroup(n), d))],
+      : above && !hasKids ? [`Вложить в «${noteTitle(above.n)}»`, 'nest', () => { upd(n, { parent: above.n.id, ...(above.n.daily ? { daily: true } : {}) }); if (above.n.collapsed) upd(above.n, { collapsed: false }); syncParent(above.n.id); }] : null,
+    dailyRoot(n) ? null : ['Перенести…', 'move', () => pickDay(d => moveNotes(moveGroup(n), d))],
     ['Удалить', 'trash', () => deleteNote(n), 'red'],
   ];
   sheet(noteTitle(n), items);
@@ -663,6 +669,8 @@ function viewImage(id, name) {
 function historyDays() {
   const days = {};
   for (const it of D.history.values()) {
+    const n = it.note && D.notes.get(it.note);
+    if (n && dailyRoot(n)) continue;  // ежедневные дела в истории не показываем
     const dt = new Date(it.time);
     (days[ymd(dt)] ||= []).push({ dt, title: it.title, note: it.note });
   }
@@ -892,7 +900,7 @@ function pickDay(fn) {
       date, h('div', { style: 'padding:6px 20px 4px;text-align:right' }, h('button', { class: 'btn accent small', onclick: () => date.value && done(date.value) }, 'На эту дату'))));
 }
 function openMenu() {
-  sheet(user.email + ` · версия 0.3 · ${innerHeight}/${screen.height}`, [
+  sheet(user.email + ` · версия 0.4 · ${innerHeight}/${screen.height}`, [
     ['Обновить', 'move', async () => {  // свежая версия приложения + данные
       try { const r = await navigator.serviceWorker?.getRegistration(); await r?.update(); } catch (e) {}
       location.reload();
